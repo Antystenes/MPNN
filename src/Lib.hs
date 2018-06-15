@@ -48,6 +48,9 @@ vecFromList = Vector . VS.fromList . take (natToInt @n) . cycle
 vecLength :: forall n. KnownNat n => Vector n -> Int
 vecLength _ = natToInt @n
 
+vecTail :: forall n. KnownNat n => Vector (n+1) -> Vector n
+vecTail (Vector v) = Vector $ VS.tail v
+
 newtype Matrix (n :: Nat) (m :: Nat) = Matrix { _mat :: LA.Matrix Float }
   deriving Show
 
@@ -72,6 +75,18 @@ data Network :: Nat -> Nat -> * where
                        Matrix (n+1) m ->
                        (forall a. Floating a => a -> a) ->
                        Network n m
+  Composition :: (KnownNat n, KnownNat m, KnownNat k) =>
+                 Network m k ->
+                 Network n m ->
+                 Network n k
+
+
+conductSignal :: forall n m. (KnownNat n, KnownNat m) =>
+                               Network n m ->
+                               Vector n ->
+                               Vector m
+conductSignal (Layer mat f) = vectorMap f . mvMul mat . vectorCons 1
+conductSignal (Composition network2 network1) = conductSignal network2 . conductSignal network1
 
 vectorMap :: (Float -> Float) -> Vector n -> Vector n
 vectorMap f (Vector v) = Vector $ VS.map f v
@@ -81,12 +96,6 @@ mvMul (Matrix m) (Vector v) = Vector $ m #> v
 
 vectorCons :: KnownNat n => Float -> Vector n -> Vector (n+1)
 vectorCons n (Vector v) = Vector $ VS.cons n v
-
-conductSignal :: forall n m. (KnownNat n, KnownNat m) =>
-                               Network n m ->
-                               Vector n ->
-                               Vector m
-conductSignal (Layer mat f) = vectorMap f . mvMul mat . vectorCons 1
 
 randomLayer :: forall n m. (KnownNat n, KnownNat m) => (forall a. Floating a => a -> a) -> IO (Network n m)
 randomLayer f = (`Layer` f) <$> randomMatrix
@@ -108,11 +117,11 @@ matrixSub (Matrix m1) (Matrix m2) = Matrix $ m1 - m2
 
 
 useTrainingExample :: forall m n. (KnownNat n, KnownNat m) =>
-                        (Vector m -> Vector m -> Vector m) ->
+                        Vector m ->
                         Network n m ->
-                        (Vector n, Vector m) ->
-                        Network n m
-useTrainingExample lossGradient (Layer weights activation) (input, expected) = trainedLayer
+                        Vector n ->
+                        (Network n m, Vector n)
+useTrainingExample diffLoss (Layer weights activation) input = (trainedLayer, inputGradient)
   where
     trainedLayer = Layer newWeights activation
     newWeights :: Matrix (n+1) m
@@ -120,9 +129,24 @@ useTrainingExample lossGradient (Layer weights activation) (input, expected) = t
     consedInput = vectorCons 1 input
     preActivationOutput = mvMul weights consedInput
     output = vectorMap activation preActivationOutput
-    diffLoss = lossGradient expected output
     diffActivation = vectorMap (diff activation) preActivationOutput
     weightGradient = outerProduct consedInput (diffLoss * diffActivation)
+    inputGradient  = vecTail $ mvMul (transposeMat weights) (diffLoss * diffActivation)
+useTrainingExample diffLoss (Composition network2 network1) input =
+    (Composition trainedNet2 trainedNet1, inputGradient)
+  where (trainedNet2,outputGrad1)   = useTrainingExample diffLoss network2 input2
+        input2                      = conductSignal network1 input
+        (trainedNet1,inputGradient) = useTrainingExample outputGrad1 network1 input
+
+showExample :: (KnownNat n, KnownNat m) =>
+                (Vector m -> Vector m -> Vector m) ->
+                Network n m ->
+                (Vector n, Vector m) ->
+                Network n m
+showExample lossGrad network (input,expected) = fst $ useTrainingExample diffLoss network input
+  where diffLoss = lossGrad expected output
+        output   = conductSignal network input
+
 
 sigmoid input = 1/(1+exp(-input))
                 -- (1/) . (1+) . exp . negate
