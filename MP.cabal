@@ -32,18 +32,10 @@ library
       ad
     , base >=4.7 && <5
     , bytestring
-    , conduit
-    , conduit-extra
-    , containers
-    , directory
     , ghc-typelits-knownnat
     , hmatrix
-    , lattices
-    , lens
     , mtl
     , random
-    , template-haskell
-    , transformers
     , vector
   exposed-modules:
       Lib
