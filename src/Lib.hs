@@ -7,7 +7,8 @@
            , KindSignatures
            , TypeOperators
            , RankNTypes
-           , GeneralizedNewtypeDeriving #-}
+           , GeneralizedNewtypeDeriving
+           , StrictData #-}
 {-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
 
 module Lib where
@@ -175,10 +176,12 @@ eval network (input,expected) = do
   putStrLn "PREDICTED:"
   print $ conductSignal network input
 
-trainTest = do
-  trainSet <- take 100 <$> getTrainSet
-  untrainedNetwork <- randomLayer sigmoid
-  let trainedNetwork = foldl (useTrainingExample gradLogLoss) untrainedNetwork trainSet
+trainTest k n = do
+  trainSet <- take n <$> getTrainSet
+  untrainedLayer1 <- randomLayer sigmoid
+  untrainedLayer2 <- randomLayer @50 @10 sigmoid
+  let untrainedNetwork = Composition untrainedLayer2 untrainedLayer1
+      trainedNetwork = foldl (showExample gradLogLoss) untrainedNetwork . take (k*n) $ cycle trainSet
       evalSet = take 10 trainSet
   mapM_ (eval trainedNetwork) evalSet
 

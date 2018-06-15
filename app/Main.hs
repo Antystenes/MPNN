@@ -3,4 +3,4 @@ module Main where
 import Lib
 
 main :: IO ()
-main = print "Nothing for now"
+main = trainTest 5 10000
